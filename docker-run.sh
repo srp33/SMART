@@ -1,5 +1,8 @@
 #!/bin/bash
 
+docker stop pdf-annotator
+docker system prune -f
+
 echo "Starting PDF Annotator container..."
 docker run -d \
     --name pdf-annotator \
