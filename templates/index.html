@@ -114,7 +114,7 @@ function goToDocument() {
   
   if (docId) {
     document.getElementById('selected-doc-name').textContent = selectedOption.text;
-    document.getElementById('view-doc-link').href = '/doc/' + docId + '/first';
+    document.getElementById('view-doc-link').href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
     document.getElementById('selected-document').style.display = 'block';
   } else {
     document.getElementById('selected-document').style.display = 'none';

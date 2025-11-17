@@ -31,17 +31,31 @@ if script_name:
     app.config['APPLICATION_ROOT'] = script_name
     
     # Create a middleware to inject SCRIPT_NAME into the WSGI environment
+    # This handles cases where the proxy may or may not strip the prefix
     class ScriptNameMiddleware:
         def __init__(self, app, script_name):
             self.app = app
             self.script_name = script_name
         
         def __call__(self, environ, start_response):
-            # Set SCRIPT_NAME in the WSGI environment
+            # Always set SCRIPT_NAME for url_for to work correctly
+            # (Even if proxy strips prefix from PATH_INFO, we need SCRIPT_NAME for URL generation)
             environ['SCRIPT_NAME'] = self.script_name
-            # Adjust PATH_INFO to remove the prefix
-            if environ.get('PATH_INFO', '').startswith(self.script_name):
-                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.script_name):]
+            
+            # Adjust PATH_INFO to remove the prefix if it's present
+            # (Some proxies strip it, some don't - handle both cases)
+            path_info = environ.get('PATH_INFO', '')
+            if path_info.startswith(self.script_name):
+                # Remove the prefix and ensure PATH_INFO starts with /
+                new_path = path_info[len(self.script_name):]
+                if not new_path.startswith('/'):
+                    new_path = '/' + new_path
+                environ['PATH_INFO'] = new_path
+            # If PATH_INFO doesn't start with prefix, assume proxy already stripped it
+            # Just ensure PATH_INFO starts with / (it should already)
+            elif path_info and not path_info.startswith('/'):
+                environ['PATH_INFO'] = '/' + path_info
+            
             return self.app(environ, start_response)
     
     app.wsgi_app = ScriptNameMiddleware(app.wsgi_app, script_name)
@@ -55,6 +69,31 @@ else:
 @app.context_processor
 def inject_script_name():
     return {'script_name': app.config.get('SCRIPT_NAME', '')}
+
+# Helper function to generate URLs with prefix support
+def url_with_prefix(endpoint, **values):
+    """Generate URL with prefix support, ensuring SCRIPT_NAME is included.
+    Flask's url_for should automatically use SCRIPT_NAME from WSGI environ,
+    but we ensure it's there as a fallback."""
+    try:
+        url = url_for(endpoint, **values)
+        script_name = app.config.get('SCRIPT_NAME', '')
+        if script_name:
+            # Flask should already include SCRIPT_NAME, but check to be sure
+            # Remove any existing prefix first to avoid double-prefixing
+            if url.startswith(script_name):
+                return url  # Already has prefix
+            # Ensure URL starts with /, then prepend prefix
+            if not url.startswith('/'):
+                url = '/' + url
+            url = script_name + url
+        return url
+    except Exception as e:
+        # Fallback to url_for if there's an error
+        import traceback
+        print(f"Error in url_with_prefix: {e}")
+        traceback.print_exc()
+        return url_for(endpoint, **values)
 
 # --- DB setup (vanilla SQLAlchemy Core for brevity) ---
 engine = create_engine(app.config["DATABASE_URL"], future=True)
@@ -350,7 +389,8 @@ def login():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    # Redirect to login with prefix support
+    return redirect(url_with_prefix("login"))
 
 
 @app.route("/", methods=["GET"])
@@ -455,7 +495,9 @@ def upload():
                 {"doc_id": doc_id, "page_index": i, "image_path": str(rel_path)}
             )
             page_id = result.scalar()
-            pages_data.append({"id": page_id, "index": i, "image_url": f"/static/images/{rel_path}"})
+            # Generate image URL with prefix support
+            image_url = url_with_prefix('serve_image', rel=str(rel_path))
+            pages_data.append({"id": page_id, "index": i, "image_url": image_url})
     
     # Return appropriate response based on request type
     if request.headers.get('Accept') == 'application/json':
@@ -465,13 +507,15 @@ def upload():
             "pages": pages_data
         })
     
-    return redirect(url_for("document_first_page", doc_id=doc_id))
+    return redirect(url_with_prefix("document_first_page", doc_id=doc_id))
 
 @app.route("/doc/<doc_id>/first")
 @login_required
 def document_first_page(doc_id):
     """Redirect to the first page of a document"""
     user = get_current_user()
+    if not user:
+        return redirect(url_with_prefix('login'))
     
     with engine.begin() as conn:
         # Check access - teachers see their own docs, students can see any teacher-uploaded doc
@@ -501,7 +545,7 @@ def document_first_page(doc_id):
         """), {"id": doc_id}).first()
         
         if first_page:
-            return redirect(url_for('page', page_id=first_page.id))
+            return redirect(url_with_prefix('page', page_id=first_page.id))
         else:
             # No pages found, show error
             abort(404)
@@ -614,11 +658,14 @@ def page_json(page_id):
             "last_page_id": page_ids[-1].id if page_ids else None
         }
         
+        # Generate image URL with prefix support
+        image_url = url_with_prefix('serve_image', rel=page.image_path)
+        
         return jsonify({
             "id": page.id,
             "document_id": page.document_id,
             "page_index": page.page_index,
-            "image_url": f"/static/images/{page.image_path}",
+            "image_url": image_url,
             "filename": page.filename,
             "annotations": annotations,
             "navigation": nav
