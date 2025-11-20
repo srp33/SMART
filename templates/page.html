@@ -38,7 +38,7 @@
         <div class="buttons">
           <div class="dropdown is-hoverable" id="color-picker-container">
             <div class="dropdown-trigger">
-              <button class="button is-outlined" id="color-picker-btn" aria-haspopup="true" aria-controls="color-menu" style="min-width: 80px; border-color: #000000; background-color: transparent; color: #000000;">
+              <button class="button" id="color-picker-btn" aria-haspopup="true" aria-controls="color-menu" style="min-width: 80px; background-color: #000000; color: #FFFFFF;">
                 Color
               </button>
             </div>
@@ -65,12 +65,12 @@
             </div>
           </div>
           <input class="input" id="color-input" type="hidden" value="#000000">
+          <button class="button is-dark is-outlined" id="tool-freehand">Freehand</button>
           <button class="button is-dark is-outlined" id="tool-rect">Rectangle</button>
           <button class="button is-dark is-outlined" id="tool-line">Line</button>
-          <button class="button is-dark is-outlined" id="tool-freehand">Freehand</button>
           <button class="button is-dark is-outlined" id="tool-text">Text</button>
           <button class="button is-dark is-outlined" id="tool-delete">Delete</button>
-          <button class="button is-dark is-outlined" id="download-png-btn" href="#" onclick="downloadAnnotatedPNG(event); return false;">
+          <button class="button is-dark is-outlined" id="download-png-btn" href="#" onclick="downloadAnnotatedPNG(event); return false;" style="display: none;">
             <span>Download PNG</span>
           </button>
         </div>
@@ -350,9 +350,16 @@
       e.stopPropagation();
       const color = btn.getAttribute('data-color');
       colorInput.value = color;
-      colorPickerBtn.style.backgroundColor = 'transparent'; // Keep background transparent for outlined style
-      colorPickerBtn.style.borderColor = color; // Update border color to match selected color
-      colorPickerBtn.style.color = color; // Update text color to match selected color
+      // Set solid background color
+      colorPickerBtn.style.backgroundColor = color;
+      // Set text color to white or black based on color brightness
+      const rgb = hexToRgb(color);
+      if (rgb) {
+        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        colorPickerBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
+      } else {
+        colorPickerBtn.style.color = '#FFFFFF';
+      }
       // Close dropdown
       const dropdown = document.getElementById('color-picker-container');
       dropdown.classList.remove('is-active');
@@ -370,11 +377,24 @@
   }
   
   // Initialize color picker button
-  colorPickerBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const dropdown = document.getElementById('color-picker-container');
-    dropdown.classList.toggle('is-active');
-  });
+  if (colorPickerBtn) {
+    // Set initial color based on colorInput value
+    const initialColor = colorInput.value;
+    colorPickerBtn.style.backgroundColor = initialColor;
+    const rgb = hexToRgb(initialColor);
+    if (rgb) {
+      const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+      colorPickerBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
+    } else {
+      colorPickerBtn.style.color = '#FFFFFF';
+    }
+    
+    colorPickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dropdown = document.getElementById('color-picker-container');
+      dropdown.classList.toggle('is-active');
+    });
+  }
   
   // Close dropdown when clicking outside
   document.addEventListener('click', (e) => {
