@@ -260,11 +260,16 @@ function goToDocument() {
 </style>
 
 <script>
-  // Show filename in file input
-  document.querySelector('.file-input').addEventListener('change', function(e) {
-    const nameSpan = document.querySelector('.file-name');
-    nameSpan.textContent = e.target.files[0]?.name || 'Your file...';
-  });
+  // Show filename in file input (only for teachers)
+  const fileInput = document.querySelector('.file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', function(e) {
+      const nameSpan = document.querySelector('.file-name');
+      if (nameSpan) {
+        nameSpan.textContent = e.target.files[0]?.name || 'Your file...';
+      }
+    });
+  }
 
   // State
   let currentDoc = null;
@@ -279,7 +284,7 @@ function goToDocument() {
   const viewerSection = document.getElementById('viewer-section');
   const pageImg = document.getElementById('page-img');
   const canvas = document.getElementById('annot-canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas ? canvas.getContext('2d') : null;
   const pageInfo = document.getElementById('page-info');
   const firstPageBtn = document.getElementById('first-page');
   const prevPageBtn = document.getElementById('prev-page');
@@ -303,52 +308,96 @@ function goToDocument() {
   let currentAnnotation = null;
   let freehandPath = [];
 
-  // Event Listeners
-  document.getElementById('upload-form').addEventListener('submit', handleUpload);
-  firstPageBtn.addEventListener('click', () => {
-    if (totalPages > 0) goToPage(0);
-  });
-  prevPageBtn.addEventListener('click', () => {
-    if (currentPage > 0 && totalPages > 0) {
-      goToPage(currentPage - 1);
-    }
-  });
-  nextPageBtn.addEventListener('click', () => {
-    if (currentPage < totalPages - 1 && totalPages > 0) {
-      goToPage(currentPage + 1);
-    }
-  });
-  lastPageBtn.addEventListener('click', () => {
-    if (totalPages > 0) goToPage(totalPages - 1);
-  });
-  newDocumentBtn.addEventListener('click', resetViewer);
+  // Event Listeners (only add if elements exist)
+  const uploadForm = document.getElementById('upload-form');
+  if (uploadForm) {
+    uploadForm.addEventListener('submit', handleUpload);
+  }
+  
+  // Viewer section elements (only exist when viewer is shown)
+  if (firstPageBtn) {
+    firstPageBtn.addEventListener('click', () => {
+      if (totalPages > 0) goToPage(0);
+    });
+  }
+  if (prevPageBtn) {
+    prevPageBtn.addEventListener('click', () => {
+      if (currentPage > 0 && totalPages > 0) {
+        goToPage(currentPage - 1);
+      }
+    });
+  }
+  if (nextPageBtn) {
+    nextPageBtn.addEventListener('click', () => {
+      if (currentPage < totalPages - 1 && totalPages > 0) {
+        goToPage(currentPage + 1);
+      }
+    });
+  }
+  if (lastPageBtn) {
+    lastPageBtn.addEventListener('click', () => {
+      if (totalPages > 0) goToPage(totalPages - 1);
+    });
+  }
+  if (newDocumentBtn) {
+    newDocumentBtn.addEventListener('click', resetViewer);
+  }
 
-  // Tool event listeners
-  toolRectBtn.addEventListener('click', () => setTool('rect'));
-  toolTextBtn.addEventListener('click', () => setTool('text'));
-  toolLineBtn.addEventListener('click', () => setTool('line'));
-  toolFreehandBtn.addEventListener('click', () => setTool('freehand'));
-  deleteBtn.addEventListener('click', () => setTool('delete'));
+  // Tool event listeners (only if viewer elements exist)
+  if (toolRectBtn) {
+    toolRectBtn.addEventListener('click', () => setTool('rect'));
+  }
+  if (toolTextBtn) {
+    toolTextBtn.addEventListener('click', () => setTool('text'));
+  }
+  if (toolLineBtn) {
+    toolLineBtn.addEventListener('click', () => setTool('line'));
+  }
+  if (toolFreehandBtn) {
+    toolFreehandBtn.addEventListener('click', () => setTool('freehand'));
+  }
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', () => setTool('delete'));
+  }
   
-  // Canvas event listeners
-  canvas.addEventListener('mousedown', handleMouseDown);
-  canvas.addEventListener('mousemove', handleMouseMove);
-  canvas.addEventListener('mouseup', handleMouseUp);
-  canvas.addEventListener('mouseleave', handleMouseUp);
+  // Canvas event listeners (only if canvas exists)
+  if (canvas) {
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mouseleave', handleMouseUp);
+    
+    // Touch events for stylus/mobile support
+    canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchmove', handleTouchMove);
+    canvas.addEventListener('touchend', handleTouchEnd);
+  }
   
-  // Touch events for stylus/mobile support
-  canvas.addEventListener('touchstart', handleTouchStart);
-  canvas.addEventListener('touchmove', handleTouchMove);
-  canvas.addEventListener('touchend', handleTouchEnd);
-  
-  // Emoji selection
-  emojiPanel.addEventListener('click', handleEmojiClick);
+  // Emoji selection (only if emoji panel exists)
+  if (emojiPanel) {
+    emojiPanel.addEventListener('click', handleEmojiClick);
+  }
 
   // Functions
   async function handleUpload(e) {
     e.preventDefault();
     
     const formData = new FormData(e.target);
+    // Find the submit button - try multiple selectors
+    const submitButton = e.target.querySelector('button[type="submit"]') || 
+                         e.target.querySelector('button.button.is-primary') ||
+                         e.target.querySelector('button');
+    
+    if (!submitButton) {
+      console.error('Could not find submit button');
+      alert('Error: Could not find submit button');
+      return;
+    }
+    
+    const originalButtonText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.textContent = 'Uploading...';
+    
     try {
       const response = await fetch(e.target.action, {
         method: 'POST',
@@ -359,21 +408,146 @@ function goToDocument() {
       });
       
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(errorData.error || 'Upload failed');
       }
       
       const data = await response.json();
-      currentDoc = data.doc_id;
-      pages = data.pages;
-      totalPages = pages.length;
       
-      showViewer();
-      loadPage(0);
+      // Add the new document to the document list
+      addDocumentToList(data.doc_id, data.filename);
+      
+      // Reset the form
+      e.target.reset();
+      
+      // Reset the file name display
+      const fileNameElement = e.target.querySelector('.file-name');
+      if (fileNameElement) {
+        fileNameElement.textContent = 'Your file...';
+      }
+      
+      // Show success message
+      submitButton.textContent = 'Uploaded!';
+      setTimeout(() => {
+        submitButton.textContent = originalButtonText;
+      }, 2000);
       
     } catch (error) {
       console.error('Error uploading file:', error);
-      alert('Failed to upload file. Please try again.');
+      alert(error.message || 'Failed to upload file. Please try again.');
+      submitButton.textContent = originalButtonText;
+    } finally {
+      submitButton.disabled = false;
     }
+  }
+  
+  function addDocumentToList(docId, filename) {
+    // Find the documents container box (the one with "Available documents:")
+    const boxes = document.querySelectorAll('.box');
+    let docsContainer = null;
+    
+    // Find the box that contains "Available documents:" text
+    for (let box of boxes) {
+      if (box.textContent.includes('Available documents')) {
+        docsContainer = box;
+        break;
+      }
+    }
+    
+    if (!docsContainer) return;
+    
+    // Check if document already exists in the list
+    const existingLink = docsContainer.querySelector(`a[href*="${docId}"]`);
+    if (existingLink) return;
+    
+    // Remove "no documents" message if it exists
+    const noDocsMsg = docsContainer.querySelector('p.has-text-grey');
+    if (noDocsMsg && noDocsMsg.textContent.includes('No documents')) {
+      noDocsMsg.remove();
+    }
+    
+    // Find the div that contains the document list (comes after the "Available documents:" paragraph)
+    let listContainer = null;
+    const children = Array.from(docsContainer.children);
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].tagName === 'P' && children[i].textContent.includes('Available documents')) {
+        // The next div should be the list container
+        if (i + 1 < children.length && children[i + 1].tagName === 'DIV') {
+          listContainer = children[i + 1];
+          break;
+        }
+      }
+    }
+    
+    // If no list container found, create it
+    if (!listContainer) {
+      // Check if we need to add the label
+      const hasLabel = docsContainer.querySelector('p.mb-3');
+      if (!hasLabel) {
+        const label = document.createElement('p');
+        label.className = 'mb-3';
+        label.textContent = 'Available documents:';
+        docsContainer.insertBefore(label, docsContainer.firstChild);
+      }
+      
+      listContainer = document.createElement('div');
+      docsContainer.appendChild(listContainer);
+    }
+    
+    // Create a new level div for the document (matching the template structure)
+    const levelDiv = document.createElement('div');
+    levelDiv.className = 'level mb-2';
+    
+    const levelLeft = document.createElement('div');
+    levelLeft.className = 'level-left';
+    const levelItem = document.createElement('div');
+    levelItem.className = 'level-item';
+    
+    const docLink = document.createElement('a');
+    docLink.className = 'button is-light';
+    docLink.href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
+    docLink.textContent = filename;
+    
+    levelItem.appendChild(docLink);
+    levelLeft.appendChild(levelItem);
+    
+    const levelRight = document.createElement('div');
+    levelRight.className = 'level-right';
+    const levelItemRight = document.createElement('div');
+    levelItemRight.className = 'level-item';
+    
+    // Create delete form
+    const deleteForm = document.createElement('form');
+    deleteForm.method = 'POST';
+    deleteForm.action = (window.BASE_PATH || '') + '/doc/' + docId + '/delete';
+    deleteForm.style.display = 'inline';
+    deleteForm.onsubmit = function() {
+      return confirm('Are you sure you want to delete \'' + filename + '\'? This will delete the document and all annotations. This cannot be undone.');
+    };
+    
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'submit';
+    deleteButton.className = 'button is-danger is-light';
+    deleteButton.title = 'Delete document';
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'icon';
+    iconSpan.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteButton.appendChild(iconSpan);
+    
+    const textSpan = document.createElement('span');
+    textSpan.textContent = 'Delete';
+    deleteButton.appendChild(textSpan);
+    
+    deleteForm.appendChild(deleteButton);
+    levelItemRight.appendChild(deleteForm);
+    levelRight.appendChild(levelItemRight);
+    
+    levelDiv.appendChild(levelLeft);
+    levelDiv.appendChild(levelRight);
+    
+    // Insert at the beginning of the list
+    listContainer.insertBefore(levelDiv, listContainer.firstChild);
   }
   
   function showViewer() {
