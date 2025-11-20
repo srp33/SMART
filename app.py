@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import json
 import zipfile
+import shutil
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -841,6 +842,7 @@ def page(page_id):
         current_index = next((i for i, p in enumerate(all_pages) if p.id == page_id), 0)
         prev_page_id = all_pages[current_index - 1].id if current_index > 0 else None
         next_page_id = all_pages[current_index + 1].id if current_index < len(all_pages) - 1 else None
+        total_pages = len(all_pages)
         
         # Generate image URL with prefix support
         image_url = url_with_prefix('serve_image', rel=page_data.image_path)
@@ -857,6 +859,7 @@ def page(page_id):
                          emotion_counts=emotion_counts,
                          prev_page_id=prev_page_id,
                          next_page_id=next_page_id,
+                         total_pages=total_pages,
                          user=user)
 
 @app.route("/page/<int:page_id>/annotate", methods=["POST"])
@@ -1634,6 +1637,22 @@ def delete_document(doc_id):
             text("DELETE FROM documents WHERE id = :doc_id"),
             {"doc_id": doc_id}
         )
+    
+    # Delete files from filesystem
+    try:
+        # Delete the PDF file from uploads directory
+        pdf_file = UPLOAD_DIR / f"{doc_id}.pdf"
+        if pdf_file.exists():
+            pdf_file.unlink()
+        
+        # Delete the images directory for this document
+        images_dir = IMAGES_DIR / doc_id
+        if images_dir.exists() and images_dir.is_dir():
+            shutil.rmtree(images_dir)
+    except Exception as e:
+        # Log the error but don't fail the deletion
+        # The database records are already deleted
+        print(f"Warning: Error deleting files for document {doc_id}: {e}")
     
     return redirect(url_for("index"))
 

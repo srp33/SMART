@@ -40,7 +40,7 @@
       </div>
     </div>
     <div class="field">
-      <button class="button is-primary">Upload & View</button>
+      <button class="button is-primary">Upload</button>
     </div>
   </form>
 </div>
@@ -77,22 +77,19 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="field">
-        <label class="label">Select Document</label>
-        <div class="control">
-          <div class="select is-fullwidth">
-            <select id="document-select" onchange="goToDocument()">
-              <option value="">-- Choose a document --</option>
-              {% for doc in docs %}
-                <option value="{{ doc.id }}">{{ doc.filename }}</option>
-              {% endfor %}
-            </select>
+      <p class="mb-3">Available documents:</p>
+      <div>
+        {% for doc in docs %}
+          <div class="level mb-2">
+            <div class="level-left">
+              <div class="level-item">
+                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-light">
+                  {{ doc.filename }}
+                </a>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      <div id="selected-document" style="display: none;" class="mt-4">
-        <p class="mb-3">Selected document: <strong id="selected-doc-name"></strong></p>
-        <a id="view-doc-link" href="#" class="button is-primary">View & Annotate Document</a>
+        {% endfor %}
       </div>
     {% endif %}
   {% else %}
@@ -106,18 +103,6 @@
   {% endif %}
 </div>
 
-<script>
-function goToDocument() {
-  const select = document.getElementById('document-select');
-  const docId = select.value;
-  
-  if (docId) {
-    // Automatically navigate to the document's first page
-    window.location.href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
-  }
-  // If no document selected (empty value), do nothing
-}
-</script>
 
 <div id="viewer-section" class="box" style="display: none;">
   <!-- Navigation Controls -->
@@ -415,6 +400,7 @@ function goToDocument() {
       const data = await response.json();
       
       // Add the new document to the document list
+      console.log('Adding document to list:', data.doc_id, data.filename);
       addDocumentToList(data.doc_id, data.filename);
       
       // Reset the form
@@ -442,35 +428,86 @@ function goToDocument() {
   }
   
   function addDocumentToList(docId, filename) {
-    // Find the documents container box (the one with "Available documents:")
+    // Find the documents container box - look for the box that comes after upload-section
+    // or contains document links
     const boxes = document.querySelectorAll('.box');
     let docsContainer = null;
     
-    // Find the box that contains "Available documents:" text
+    // Strategy 1: Find box that contains "Available documents:" text
     for (let box of boxes) {
-      if (box.textContent.includes('Available documents')) {
+      const text = box.textContent || '';
+      if (text.includes('Available documents')) {
         docsContainer = box;
         break;
       }
     }
     
-    if (!docsContainer) return;
+    // Strategy 2: If not found, find the box that comes after upload-section
+    if (!docsContainer) {
+      const uploadSection = document.getElementById('upload-section');
+      if (uploadSection) {
+        const uploadBox = uploadSection.closest('.box');
+        if (uploadBox && uploadBox.nextElementSibling && uploadBox.nextElementSibling.classList.contains('box')) {
+          docsContainer = uploadBox.nextElementSibling;
+        }
+      }
+    }
+    
+    // Strategy 3: Find any box that might contain document links
+    if (!docsContainer) {
+      for (let box of boxes) {
+        if (box.querySelector('a.button.is-light[href*="/doc/"]')) {
+          docsContainer = box;
+          break;
+        }
+      }
+    }
+    
+    // Strategy 4: Find the last box (likely the documents box)
+    if (!docsContainer && boxes.length > 0) {
+      // Skip the upload box if it exists
+      const uploadBox = document.getElementById('upload-section')?.closest('.box');
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        if (boxes[i] !== uploadBox) {
+          docsContainer = boxes[i];
+          break;
+        }
+      }
+    }
+    
+    if (!docsContainer) {
+      console.error('Could not find documents container');
+      return;
+    }
     
     // Check if document already exists in the list
     const existingLink = docsContainer.querySelector(`a[href*="${docId}"]`);
-    if (existingLink) return;
-    
-    // Remove "no documents" message if it exists
-    const noDocsMsg = docsContainer.querySelector('p.has-text-grey');
-    if (noDocsMsg && noDocsMsg.textContent.includes('No documents')) {
-      noDocsMsg.remove();
+    if (existingLink) {
+      console.log('Document already in list');
+      return;
     }
     
-    // Find the div that contains the document list (comes after the "Available documents:" paragraph)
+    // Remove "no documents" message if it exists and clear container
+    const noDocsMsg = docsContainer.querySelector('p.has-text-grey');
+    if (noDocsMsg && (noDocsMsg.textContent.includes('No documents') || noDocsMsg.textContent.includes('No documents uploaded'))) {
+      // Clear the container and start fresh
+      docsContainer.innerHTML = '';
+    }
+    
+    // Find or create the label
+    let label = docsContainer.querySelector('p.mb-3');
+    if (!label || !label.textContent.includes('Available documents')) {
+      label = document.createElement('p');
+      label.className = 'mb-3';
+      label.textContent = 'Available documents:';
+      docsContainer.appendChild(label);
+    }
+    
+    // Find the div that contains the document list (comes after the label)
     let listContainer = null;
     const children = Array.from(docsContainer.children);
     for (let i = 0; i < children.length; i++) {
-      if (children[i].tagName === 'P' && children[i].textContent.includes('Available documents')) {
+      if (children[i] === label) {
         // The next div should be the list container
         if (i + 1 < children.length && children[i + 1].tagName === 'DIV') {
           listContainer = children[i + 1];
@@ -481,17 +518,13 @@ function goToDocument() {
     
     // If no list container found, create it
     if (!listContainer) {
-      // Check if we need to add the label
-      const hasLabel = docsContainer.querySelector('p.mb-3');
-      if (!hasLabel) {
-        const label = document.createElement('p');
-        label.className = 'mb-3';
-        label.textContent = 'Available documents:';
-        docsContainer.insertBefore(label, docsContainer.firstChild);
-      }
-      
       listContainer = document.createElement('div');
-      docsContainer.appendChild(listContainer);
+      // Insert after the label
+      if (label.nextSibling) {
+        docsContainer.insertBefore(listContainer, label.nextSibling);
+      } else {
+        docsContainer.appendChild(listContainer);
+      }
     }
     
     // Create a new level div for the document (matching the template structure)

@@ -24,7 +24,7 @@
   <div class="level mb-4">
     <div class="level-right">
       <div class="level-item">
-        <p class="has-text-grey">Page {{ page.page_index + 1 }}</p>
+        <p class="has-text-grey">Page {{ page.page_index + 1 }}/{{ total_pages }}</p>
       </div>
     </div>
   </div>
@@ -38,8 +38,10 @@
         <div class="buttons">
           <div class="dropdown is-hoverable" id="color-picker-container">
             <div class="dropdown-trigger">
-              <button class="button" id="color-picker-btn" aria-haspopup="true" aria-controls="color-menu" style="min-width: 80px; background-color: #000000; color: #FFFFFF;">
-                Color
+              <button class="button" id="color-picker-btn" aria-haspopup="true" aria-controls="color-menu" style="padding-left: 0.75rem; padding-right: 0.75rem; background-color: #FFFFFF; border: 1px solid #FF0000; color: #FF0000;" title="Color">
+                <span class="icon">
+                  <i class="fas fa-palette" id="color-picker-icon"></i>
+                </span>
               </button>
             </div>
             <div class="dropdown-menu" id="color-menu" role="menu">
@@ -64,7 +66,7 @@
               </div>
             </div>
           </div>
-          <input class="input" id="color-input" type="hidden" value="#000000">
+          <input class="input" id="color-input" type="hidden" value="#FF0000">
           <button class="button is-dark is-outlined" id="tool-freehand">Freehand</button>
           <button class="button is-dark is-outlined" id="tool-rect">Rectangle</button>
           <button class="button is-dark is-outlined" id="tool-line">Line</button>
@@ -284,6 +286,26 @@
   </div>
 </div>
 
+<!-- Navigation buttons at bottom -->
+<div class="box mt-4">
+  <div class="level">
+    <div class="level-left">
+      <div class="level-item">
+        {% if prev_page_id %}
+        <a class="button is-dark is-outlined" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="level-right">
+      <div class="level-item">
+        {% if next_page_id %}
+        <a class="button is-dark is-outlined" href="{{ url_for('page', page_id=next_page_id) }}">Next →</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if user['role'] == 'student' %}
 <!-- Text Input Modal -->
 <div class="modal" id="text-modal">
@@ -314,7 +336,7 @@
 {% if user['role'] == 'student' %}
 <script>
   const pageId = {{ page.id }};
-  const existing = {{ annotations|tojson }};
+  let existing = {{ annotations|tojson }};
   let currentEmoji = {{ (current_emoji or 'null')|tojson }};
 
   const img = document.getElementById('page-img');
@@ -350,16 +372,15 @@
       e.stopPropagation();
       const color = btn.getAttribute('data-color');
       colorInput.value = color;
-      // Set solid background color
-      colorPickerBtn.style.backgroundColor = color;
-      // Set text color to white or black based on color brightness
-      const rgb = hexToRgb(color);
-      if (rgb) {
-        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-        colorPickerBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
-      } else {
-        colorPickerBtn.style.color = '#FFFFFF';
+      // Set white background, colored border, and colored icon
+      colorPickerBtn.style.backgroundColor = '#FFFFFF';
+      colorPickerBtn.style.border = `1px solid ${color}`;
+      const colorPickerIcon = document.getElementById('color-picker-icon');
+      if (colorPickerIcon) {
+        colorPickerIcon.style.color = color;
       }
+      // Update active tool button color
+      updateActiveToolColor();
       // Close dropdown
       const dropdown = document.getElementById('color-picker-container');
       dropdown.classList.remove('is-active');
@@ -380,13 +401,11 @@
   if (colorPickerBtn) {
     // Set initial color based on colorInput value
     const initialColor = colorInput.value;
-    colorPickerBtn.style.backgroundColor = initialColor;
-    const rgb = hexToRgb(initialColor);
-    if (rgb) {
-      const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-      colorPickerBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
-    } else {
-      colorPickerBtn.style.color = '#FFFFFF';
+    colorPickerBtn.style.backgroundColor = '#FFFFFF';
+    colorPickerBtn.style.border = `1px solid ${initialColor}`;
+    const colorPickerIcon = document.getElementById('color-picker-icon');
+    if (colorPickerIcon) {
+      colorPickerIcon.style.color = initialColor;
     }
     
     colorPickerBtn.addEventListener('click', (e) => {
@@ -406,34 +425,88 @@
 
   function setActiveTool(selectedTool) {
     tool = selectedTool;
-    // Remove active class and add outlined class to all buttons
+    // Save the selected tool to sessionStorage so it persists across page navigation
+    if (typeof(Storage) !== "undefined") {
+      sessionStorage.setItem('selectedTool', selectedTool);
+    }
+    // Remove active class and add outlined class to all buttons, reset their styles
     [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, deleteBtn].forEach(btn => {
       if (btn) {
         btn.classList.remove('is-active');
         btn.classList.add('is-outlined');
+        // Reset to default outlined style
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
       }
     });
-    // Add active class and remove outlined class from selected button
+    
+    // Get the current selected color
+    const selectedColor = colorInput.value;
+    
+    // Add active class and remove outlined class from selected button, set its color
+    let activeBtn = null;
     if (tool === 'rect') {
-      toolRectBtn.classList.add('is-active');
-      toolRectBtn.classList.remove('is-outlined');
+      activeBtn = toolRectBtn;
       canvas.style.cursor = 'crosshair';
     } else if (tool === 'text') {
-      toolTextBtn.classList.add('is-active');
-      toolTextBtn.classList.remove('is-outlined');
+      activeBtn = toolTextBtn;
       canvas.style.cursor = 'crosshair';
     } else if (tool === 'line') {
-      toolLineBtn.classList.add('is-active');
-      toolLineBtn.classList.remove('is-outlined');
+      activeBtn = toolLineBtn;
       canvas.style.cursor = 'crosshair';
     } else if (tool === 'freehand') {
-      toolFreehandBtn.classList.add('is-active');
-      toolFreehandBtn.classList.remove('is-outlined');
+      activeBtn = toolFreehandBtn;
       canvas.style.cursor = 'crosshair';
     } else if (tool === 'delete') {
-      deleteBtn.classList.add('is-active');
-      deleteBtn.classList.remove('is-outlined');
+      activeBtn = deleteBtn;
       canvas.style.cursor = 'pointer';
+    }
+    
+    if (activeBtn) {
+      activeBtn.classList.add('is-active');
+      activeBtn.classList.remove('is-outlined');
+      // Set background color - use selected color for all buttons except Delete
+      if (tool === 'delete') {
+        // Delete button stays black
+        activeBtn.style.backgroundColor = '#000000';
+        activeBtn.style.color = '#FFFFFF';
+      } else {
+        // Other buttons use selected color
+        activeBtn.style.backgroundColor = selectedColor;
+        // Set text color based on brightness for readability
+        const rgb = hexToRgb(selectedColor);
+        if (rgb) {
+          const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+          activeBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
+        } else {
+          activeBtn.style.color = '#FFFFFF';
+        }
+      }
+    }
+  }
+  
+  // Function to update the active button's color when color changes
+  function updateActiveToolColor() {
+    const selectedColor = colorInput.value;
+    const activeBtn = [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, deleteBtn].find(btn => 
+      btn && btn.classList.contains('is-active')
+    );
+    
+    if (activeBtn) {
+      // Don't update Delete button - it stays black
+      if (activeBtn === deleteBtn) {
+        return;
+      }
+      
+      activeBtn.style.backgroundColor = selectedColor;
+      const rgb = hexToRgb(selectedColor);
+      if (rgb) {
+        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        activeBtn.style.color = brightness > 128 ? '#000000' : '#FFFFFF';
+      } else {
+        activeBtn.style.color = '#FFFFFF';
+      }
     }
   }
 
@@ -443,8 +516,10 @@
   toolFreehandBtn.onclick = () => setActiveTool('freehand');
   deleteBtn.onclick = () => setActiveTool('delete');
   
-  // Set initial active tool
-  setActiveTool('freehand');
+  // Set initial active tool - restore from sessionStorage if available
+  const savedTool = (typeof(Storage) !== "undefined") ? sessionStorage.getItem('selectedTool') : null;
+  const initialTool = savedTool || 'freehand';
+  setActiveTool(initialTool);
 
   function resizeCanvasToImage() {
     canvas.width = img.clientWidth;
@@ -849,7 +924,15 @@
   function deleteAnnotation(id) {
     fetch(`${window.BASE_PATH || ''}/annotations/${id}`, { method: 'DELETE' })
       .then(r => r.json())
-      .then(resp => { if (resp.status === 'success') location.reload(); });
+      .then(resp => { 
+        if (resp.status === 'success') {
+          // Remove from local array
+          existing = existing.filter(a => a.id !== id);
+          // Redraw canvas
+          redraw();
+          // Keep Delete tool selected (don't change tool)
+        }
+      });
   }
 
   function hitTest(x, y) {
@@ -1107,20 +1190,35 @@
       const currentImg = document.getElementById('page-img');
       let displayedWidth, displayedHeight;
       
-      // Normalize URLs for comparison
+      // Normalize URLs for comparison - extract just the path part
       const normalizeUrl = (url) => {
         try {
-          const u = new URL(url, window.location.href);
-          return u.pathname + u.search;
+          // Handle both absolute and relative URLs
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            const u = new URL(url);
+            return u.pathname;
+          } else {
+            // Relative URL - extract path after removing query params
+            const path = url.split('?')[0];
+            // Remove any leading slashes and base path
+            return path.replace(/^\/+/, '').replace(/^[^\/]+\//, '');
+          }
         } catch {
-          return url;
+          // Fallback: just extract the filename/path
+          return url.split('?')[0].split('/').pop();
         }
       };
       
       const currentImgSrc = currentImg ? normalizeUrl(currentImg.src) : null;
       const targetImgSrc = normalizeUrl(pageImageUrl);
       
-      if (currentImg && currentImgSrc === targetImgSrc && currentImg.clientWidth > 0) {
+      // Also check if the URLs end with the same path (more robust comparison)
+      const currentPath = currentImgSrc ? currentImgSrc.split('/').pop() : null;
+      const targetPath = targetImgSrc ? targetImgSrc.split('/').pop() : null;
+      const pathsMatch = currentPath && targetPath && currentPath === targetPath;
+      const fullUrlsMatch = currentImgSrc === targetImgSrc;
+      
+      if (currentImg && (fullUrlsMatch || pathsMatch) && currentImg.clientWidth > 0) {
         // Same page - use canvas dimensions (annotations are stored relative to canvas, not img)
         // This is EXACTLY what downloadAnnotatedPNG does
         const currentCanvas = document.getElementById('annot-canvas');
@@ -1134,49 +1232,99 @@
         }
         generatePNG();
       } else {
-        // Different page - need to measure it accurately to match how canvas would be sized
-        // Create a temporary image element in the same container structure
-        const tempContainer = document.createElement('div');
-        tempContainer.style.position = 'absolute';
-        tempContainer.style.top = '-9999px';
-        tempContainer.style.left = '-9999px';
-        tempContainer.style.width = '66.666%'; // Match is-two-thirds column
-        tempContainer.style.maxWidth = '66.666%';
-        tempContainer.style.visibility = 'hidden';
+        // Different page - use the current page's display scale as a reference
+        // This ensures consistent scaling across all pages
+        const currentCanvas = document.getElementById('annot-canvas');
+        let currentDisplayedWidth, currentDisplayedHeight;
         
-        const tempImg = document.createElement('img');
-        tempImg.style.width = '100%';
-        tempImg.style.height = 'auto';
-        tempImg.style.display = 'block';
-        tempImg.crossOrigin = 'anonymous';
-        tempContainer.appendChild(tempImg);
-        document.body.appendChild(tempContainer);
+        if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
+          // Use canvas dimensions if available
+          currentDisplayedWidth = currentCanvas.width;
+          currentDisplayedHeight = currentCanvas.height;
+        } else if (currentImg && currentImg.clientWidth > 0) {
+          // Fallback to image dimensions
+          currentDisplayedWidth = currentImg.clientWidth;
+          currentDisplayedHeight = currentImg.clientHeight;
+        } else {
+          // No reference available, need to measure
+          currentDisplayedWidth = null;
+          currentDisplayedHeight = null;
+        }
         
-        tempImg.onload = function() {
-          // Force reflow
-          void tempContainer.offsetWidth;
-          
-          // Use clientWidth/clientHeight, but round to integers to match canvas behavior
-          // Canvas dimensions are always integers, so annotations are stored relative to rounded dimensions
-          displayedWidth = Math.round(tempImg.clientWidth);
-          displayedHeight = Math.round(tempImg.clientHeight);
-          
-          if (!displayedWidth || !displayedHeight || displayedWidth === 0 || displayedHeight === 0) {
-            document.body.removeChild(tempContainer);
-            reject(new Error('Failed to get valid dimensions for image'));
-            return;
+        // Load the target image to get its natural dimensions
+        const targetImg = new Image();
+        targetImg.crossOrigin = 'anonymous';
+        
+        targetImg.onload = function() {
+          if (currentDisplayedWidth && currentImg && currentImg.naturalWidth > 0) {
+            // Calculate the display scale from the current page
+            const currentDisplayScale = currentDisplayedWidth / currentImg.naturalWidth;
+            
+            // Apply the same scale to the target image
+            displayedWidth = Math.round(targetImg.naturalWidth * currentDisplayScale);
+            displayedHeight = Math.round(targetImg.naturalHeight * currentDisplayScale);
+            
+            generatePNG();
+          } else {
+            // Fallback: measure the target image directly
+            const tempContainer = document.createElement('div');
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.top = '-9999px';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.width = '66.666%';
+            tempContainer.style.maxWidth = '66.666%';
+            tempContainer.style.visibility = 'hidden';
+            
+            const tempWrapper = document.createElement('div');
+            tempWrapper.style.position = 'relative';
+            tempWrapper.style.display = 'inline-block';
+            tempWrapper.style.width = '100%';
+            
+            const tempImg = document.createElement('img');
+            tempImg.className = 'page-image';
+            tempImg.style.width = '100%';
+            tempImg.style.height = 'auto';
+            tempImg.style.display = 'block';
+            tempImg.crossOrigin = 'anonymous';
+            tempImg.src = pageImageUrl;
+            
+            tempWrapper.appendChild(tempImg);
+            tempContainer.appendChild(tempWrapper);
+            document.body.appendChild(tempContainer);
+            
+            tempImg.onload = function() {
+              void tempContainer.offsetWidth;
+              void tempImg.offsetWidth;
+              
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  displayedWidth = Math.round(tempImg.clientWidth);
+                  displayedHeight = Math.round(tempImg.clientHeight);
+                  
+                  if (!displayedWidth || !displayedHeight) {
+                    document.body.removeChild(tempContainer);
+                    reject(new Error('Failed to get valid dimensions'));
+                    return;
+                  }
+                  
+                  document.body.removeChild(tempContainer);
+                  generatePNG();
+                });
+              });
+            };
+            
+            tempImg.onerror = function() {
+              document.body.removeChild(tempContainer);
+              reject(new Error('Failed to load image'));
+            };
           }
-          
-          document.body.removeChild(tempContainer);
-          generatePNG();
         };
         
-        tempImg.onerror = function() {
-          document.body.removeChild(tempContainer);
-          reject(new Error('Failed to load image: ' + pageImageUrl));
+        targetImg.onerror = function() {
+          reject(new Error('Failed to load target image: ' + pageImageUrl));
         };
         
-        tempImg.src = pageImageUrl;
+        targetImg.src = pageImageUrl;
       }
       
       function generatePNG() {
