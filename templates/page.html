@@ -371,22 +371,10 @@
 </div>
 
 {% if user['role'] == 'student' %}
-<!-- Text Input Modal -->
-<div class="modal" id="text-modal">
-  <div class="modal-background"></div>
-  <div class="modal-card">
-    <header class="modal-card-head">
-      <p class="modal-card-title" id="text-modal-title">Enter Text</p>
-      <button class="delete" aria-label="close" id="close-text-modal"></button>
-    </header>
-    <section class="modal-card-body">
-      <textarea class="textarea" id="text-modal-input" placeholder="Enter your text here (up to 6 lines)" rows="6" style="min-height: 120px;"></textarea>
-    </section>
-    <footer class="modal-card-foot">
-      <button class="button is-primary" id="submit-text-modal">Add Text</button>
-      <button class="button" id="cancel-text-modal">Cancel</button>
-    </footer>
-  </div>
+<!-- Inline Text Input -->
+<div id="inline-text-container" style="position: fixed; display: none; z-index: 1000; align-items: flex-end;">
+  <textarea id="inline-text-input" style="border: 2px solid #007bff; border-radius: 4px; padding: 4px 8px; font-size: 16px; font-family: sans-serif; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.2); min-width: 200px; max-width: 400px; resize: vertical; line-height: 1.4;"></textarea>
+  <button id="inline-text-save-btn" style="margin-left: 4px; padding: 4px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: fit-content; align-self: flex-end;">Save</button>
 </div>
 {% endif %}
 
@@ -416,13 +404,10 @@
   const colorInput = document.getElementById('color-input');
   const colorPickerBtn = document.getElementById('color-picker-btn');
   
-  // Text modal elements
-  const textModal = document.getElementById('text-modal');
-  const textModalInput = document.getElementById('text-modal-input');
-  const textModalTitle = document.getElementById('text-modal-title');
-  const submitTextBtn = document.getElementById('submit-text-modal');
-  const cancelTextBtn = document.getElementById('cancel-text-modal');
-  const closeTextModalBtn = document.getElementById('close-text-modal');
+  // Inline text input elements
+  const inlineTextContainer = document.getElementById('inline-text-container');
+  const inlineTextInput = document.getElementById('inline-text-input');
+  const inlineTextSaveBtn = document.getElementById('inline-text-save-btn');
 
   let tool = 'rect';
   let drawing = false;
@@ -652,84 +637,126 @@
     setTimeout(() => clearInterval(checkInterval), 5000);
   }
   
-  // Text modal functions
-  function showTextModal(x, y, annotationToEdit = null) {
-    if (!textModal || !textModalInput) return;
+  // Inline text input functions
+  function showInlineTextInput(x, y, annotationToEdit = null, event = null) {
+    if (!inlineTextInput || !inlineTextContainer) return;
     
     editingTextAnnotation = annotationToEdit;
     
+    // Get screen coordinates - always convert from canvas coordinates for accuracy
+    const canvasRect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / canvasRect.width;
+    const scaleY = canvas.height / canvasRect.height;
+    
+    let screenX, screenY;
     if (annotationToEdit) {
-      // Editing existing annotation
+      // Editing existing annotation - preserve line breaks
+      inlineTextInput.value = annotationToEdit.text || '';
       pendingTextPosition = { x: annotationToEdit.x, y: annotationToEdit.y };
-      textModalInput.value = annotationToEdit.text || '';
-      if (textModalTitle) textModalTitle.textContent = 'Edit Text';
-      if (submitTextBtn) submitTextBtn.textContent = 'Update Text';
+      // Position at annotation location
+      screenX = canvasRect.left + (annotationToEdit.x / scaleX);
+      screenY = canvasRect.top + (annotationToEdit.y / scaleY);
     } else {
       // Creating new annotation
+      inlineTextInput.value = '';
       pendingTextPosition = { x, y };
-      textModalInput.value = '';
-      if (textModalTitle) textModalTitle.textContent = 'Enter Text';
-      if (submitTextBtn) submitTextBtn.textContent = 'Add Text';
+      // Position at click location
+      screenX = canvasRect.left + (x / scaleX);
+      screenY = canvasRect.top + (y / scaleY);
     }
     
-    textModal.classList.add('is-active');
+    // Position container so bottom-left is at the click point
+    // Use bottom positioning to align with click point
+    inlineTextContainer.style.left = screenX + 'px';
+    inlineTextContainer.style.bottom = (window.innerHeight - screenY) + 'px';
+    inlineTextContainer.style.display = 'flex';
+    inlineTextContainer.style.alignItems = 'flex-end';
     
-    // Focus the input after a short delay to ensure modal is visible
-    // Use requestAnimationFrame to ensure DOM updates are complete
+    // Reset textarea height to auto to recalculate
+    inlineTextInput.style.height = 'auto';
+    inlineTextInput.style.height = inlineTextInput.scrollHeight + 'px';
+    
+    // Focus and select text
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        textModalInput.focus();
-        // Select all text when editing
-        if (annotationToEdit && textModalInput.value) {
-          textModalInput.select();
-        }
-      });
+      inlineTextInput.focus();
+      if (annotationToEdit && inlineTextInput.value) {
+        inlineTextInput.select();
+      }
     });
   }
   
-  function hideTextModal() {
-    if (!textModal || !textModalInput) return;
-    textModal.classList.remove('is-active');
+  function hideInlineTextInput() {
+    if (!inlineTextInput || !inlineTextContainer) return;
+    inlineTextContainer.style.display = 'none';
     pendingTextPosition = null;
     editingTextAnnotation = null;
-    textModalInput.value = '';
+    inlineTextInput.value = '';
+    inlineTextInput.style.height = 'auto';
   }
   
-  function submitTextFromModal() {
-    const txt = textModalInput.value; // Don't trim - preserve line breaks
+  function submitInlineText() {
+    const txt = inlineTextInput.value; // Don't trim - preserve line breaks and whitespace
+    
     if (!txt || !txt.trim()) {
       // If editing and text is empty, delete the annotation
       if (editingTextAnnotation) {
         deleteAnnotation(editingTextAnnotation.id);
       }
-      hideTextModal();
+      hideInlineTextInput();
       return;
     }
     
     if (!pendingTextPosition) {
-      hideTextModal();
+      hideInlineTextInput();
       return;
     }
     
-    const x = pendingTextPosition.x;
-    const y = pendingTextPosition.y;
+    let x = pendingTextPosition.x;
+    let y = pendingTextPosition.y;
     
-    // Calculate text dimensions - no wrapping, just measure actual lines
+    // Calculate text dimensions for multiline text
     ctx.font = '16px sans-serif';
     const lineHeight = 18;
-    
-    // Split by line breaks and measure each line
     const lines = txt.split('\n');
-    let maxLineWidth = 0;
     
+    // Measure each line to find the maximum width
+    let maxLineWidth = 0;
     for (let i = 0; i < lines.length; i++) {
       const metrics = ctx.measureText(lines[i]);
       maxLineWidth = Math.max(maxLineWidth, metrics.width);
     }
     
-    // Store width and height for hit testing and display
     const textWidth = maxLineWidth;
     const textHeight = lines.length * lineHeight;
+    
+    // Adjust x slightly to the left for better alignment
+    x = x - 1;
+    
+    // Adjust y so that the vertical middle of the first line aligns with the click point
+    // fillText draws with baseline at y
+    // For the first line, we need to position the baseline so the middle of the line is at clickY
+    // The middle of the first line = baseline - (lineHeight/2 - offset from baseline to middle)
+    // We can use actualBoundingBoxAscent to find the height above baseline
+    const firstLineMetrics = ctx.measureText(lines[0] || '');
+    const actualBoundingBoxAscent = firstLineMetrics.actualBoundingBoxAscent || 13; // Typical for 16px font
+    const actualBoundingBoxDescent = firstLineMetrics.actualBoundingBoxDescent || 3;
+    
+    // The middle of the first line is at: baseline - (lineHeight/2 - (ascent - lineHeight/2))
+    // Simplified: middle = baseline - (lineHeight/2) + (ascent - lineHeight/2)
+    // Actually, let's think: the line goes from (baseline - ascent) to (baseline + descent)
+    // The middle would be at: baseline - ascent + (ascent + descent)/2 = baseline - (ascent - descent)/2
+    // But lineHeight is typically larger than (ascent + descent)
+    // For 16px font: ascent ~13px, descent ~3px, lineHeight ~18px
+    // So the middle of the line (considering lineHeight) is at: baseline - lineHeight/2 + some offset
+    // The offset accounts for the fact that the baseline is not at the middle
+    
+    // Calculate the middle of the first line relative to baseline
+    // Middle of line = top of line + lineHeight/2
+    // Top of line = baseline - ascent
+    // So: middle = baseline - ascent + lineHeight/2
+    // If we want middle at clickY: baseline = clickY + ascent - lineHeight/2
+    const middleOffset = actualBoundingBoxAscent - (lineHeight / 2);
+    y = y + middleOffset;
     
     if (editingTextAnnotation) {
       // Update existing annotation
@@ -739,7 +766,7 @@
         y: y,
         w: textWidth,
         h: textHeight,
-        text: txt,
+        text: txt, // Preserve line breaks
         color: editingTextAnnotation.color // Keep original color
       });
     } else {
@@ -755,35 +782,48 @@
       });
     }
     
-    hideTextModal();
+    hideInlineTextInput();
   }
   
-  // Modal event handlers - check if elements exist before adding listeners
-  if (submitTextBtn) {
-    submitTextBtn.addEventListener('click', submitTextFromModal);
-  }
-  if (cancelTextBtn) {
-    cancelTextBtn.addEventListener('click', hideTextModal);
-  }
-  if (closeTextModalBtn) {
-    closeTextModalBtn.addEventListener('click', hideTextModal);
-  }
-  
-  // Close modal when clicking background
-  if (textModal) {
-    const modalBackground = textModal.querySelector('.modal-background');
-    if (modalBackground) {
-      modalBackground.addEventListener('click', hideTextModal);
-    }
-  }
-  
-  // Only Escape closes modal, Enter creates new line (no submit on Enter)
-  if (textModalInput) {
-    textModalInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        hideTextModal();
+  // Inline text input event handlers
+  if (inlineTextInput) {
+    // Auto-resize textarea as user types
+    inlineTextInput.addEventListener('input', () => {
+      inlineTextInput.style.height = 'auto';
+      inlineTextInput.style.height = inlineTextInput.scrollHeight + 'px';
+    });
+    
+    inlineTextInput.addEventListener('keydown', (e) => {
+      // Command-Enter (Mac) or Ctrl-Enter (Windows) to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        submitInlineText();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        hideInlineTextInput();
       }
-      // Enter key is allowed to create new lines - no preventDefault or submit
+      // Regular Enter key creates a new line (default textarea behavior)
+    });
+    
+    // Save button click handler
+    if (inlineTextSaveBtn) {
+      inlineTextSaveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        submitInlineText();
+      });
+    }
+    
+    // Don't auto-save on blur - user must explicitly save with button or Cmd/Ctrl-Enter
+    // But still hide if empty when clicking outside
+    inlineTextInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (inlineTextContainer && inlineTextContainer.style.display === 'block') {
+          // Only hide if empty, otherwise keep it visible for user to save
+          if (!inlineTextInput.value || !inlineTextInput.value.trim()) {
+            hideInlineTextInput();
+          }
+        }
+      }, 200);
     });
   }
 
@@ -892,9 +932,9 @@
   }
 
   canvas.addEventListener('mousedown', (e) => {
-    // Prevent triggering canvas actions when clicking on color picker or modal
+    // Prevent triggering canvas actions when clicking on color picker or inline text input
     const target = e.target;
-    if (target.closest('#color-picker-container') || target.closest('#text-modal') || target.closest('.modal')) {
+    if (target.closest('#color-picker-container') || target === inlineTextInput || target === inlineTextSaveBtn || target.closest('#inline-text-container')) {
       return;
     }
     
@@ -923,8 +963,12 @@
       startX = x;
       startY = y;
     } else if (tool === 'text') {
-      // Show modal for text input
-      showTextModal(x, y);
+      // Don't create new text if inline input is already visible
+      if (inlineTextContainer && inlineTextContainer.style.display === 'block') {
+        return;
+      }
+      // Show inline text input (pass event for accurate positioning)
+      showInlineTextInput(x, y, null, e);
     } else if (tool === 'move') {
       // Check if clicking on an existing annotation
       const id = hitTest(x, y);
@@ -980,8 +1024,12 @@
       startX = x;
       startY = y;
     } else if (tool === 'text') {
-      // Show modal for text input
-      showTextModal(x, y);
+      // Don't create new text if inline input is already visible
+      if (inlineTextContainer && inlineTextContainer.style.display === 'block') {
+        return;
+      }
+      // Show inline text input (pass event for accurate positioning)
+      showInlineTextInput(x, y, null, e);
     } else if (tool === 'move') {
       // Check if clicking on an existing annotation
       const id = hitTest(x, y);
@@ -1281,9 +1329,9 @@
 
   // Double-click to edit text annotations
   canvas.addEventListener('dblclick', (e) => {
-    // Prevent triggering canvas actions when clicking on color picker or modal
+    // Prevent triggering canvas actions when clicking on color picker or inline text input
     const target = e.target;
-    if (target.closest('#color-picker-container') || target.closest('#text-modal') || target.closest('.modal')) {
+    if (target.closest('#color-picker-container') || target === inlineTextInput || target === inlineTextSaveBtn || target.closest('#inline-text-container')) {
       return;
     }
     
@@ -1302,8 +1350,8 @@
     if (id != null) {
       const ann = existing.find(a => a.id === id);
       if (ann && ann.kind === 'text') {
-        // Show modal with existing text for editing
-        showTextModal(x, y, ann);
+        // Show inline text input with existing text for editing
+        showInlineTextInput(x, y, ann, e);
       }
     }
   });
@@ -1515,7 +1563,27 @@
         // Use stored width/height if available, otherwise calculate
         const w = a.w || (10 + (a.text ? a.text.length * 8 : 20));
         const h = a.h || 20;
-        if (x >= a.x - 5 && x <= a.x + w && y >= a.y - h && y <= a.y + 5) return a.id;
+        
+        // For text, a.y is the baseline of the first line
+        // The stored h is the total height (numLines * lineHeight = 18 * numLines)
+        // Text is positioned so the middle of the first line aligns with the click point
+        // 
+        // The baseline is offset from the middle: baseline = middle + (lineHeight/2 - ascent)
+        // Top of first line: baseline - ascent = middle - lineHeight/2
+        // Bottom of last line: baseline + (numLines - 1) * lineHeight + descent
+        //   = middle - lineHeight/2 + ascent + (numLines - 1) * lineHeight + descent
+        //   ≈ middle - lineHeight/2 + h (since h = numLines * lineHeight)
+        //
+        // Since middle was at clickY, and baseline is at a.y:
+        // Top of text: a.y - ascent ≈ a.y - lineHeight/2
+        // Bottom of text: a.y - lineHeight/2 + h
+        const lineHeight = 18;
+        const ascent = 13; // Typical ascent for 16px font
+        const topY = a.y - ascent;
+        const bottomY = a.y - lineHeight / 2 + h;
+        
+        // Check if point is within the bounding box (with small padding for easier clicking)
+        if (x >= a.x - 5 && x <= a.x + w + 5 && y >= topY - 2 && y <= bottomY + 2) return a.id;
       } else if (a.kind === 'line') {
         const dist = Math.abs((a.h)*(x - a.x) - (a.w)*(y - a.y)) / Math.sqrt(a.h*a.h + a.w*a.w);
         if (dist < 5) return a.id;
