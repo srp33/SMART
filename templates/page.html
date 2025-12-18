@@ -1490,8 +1490,6 @@
         redraw();
         // Update Move button state (redraw already calls it, but being explicit)
         updateMoveButtonState();
-        // Switch to Move tool after adding an annotation
-        setActiveTool('move');
       }
     }).catch(err => {
       console.error('Error saving annotation:', err);
