@@ -61,17 +61,18 @@
   const layout = {
     title: {
       text: 'Emotion Frequency by Page',
-      font: { size: 20, color: '#333' }
+      font: { size: 40, color: '#333' }
     },
     xaxis: {
       title: {
         text: 'Page Number',
-        font: { size: 14 }
+        font: { size: 28 }
       },
       type: 'linear',
       tickmode: 'linear',
       tick0: 1,
       dtick: 1,
+      tickfont: { size: 24 },
       showgrid: true,
       gridcolor: '#e0e0e0',
       range: [Math.max(0.5, minPage - 0.5), maxPage + 0.5],  // Add padding but don't show pages < 1
@@ -82,6 +83,7 @@
       type: 'category',
       categoryorder: 'array',
       categoryarray: emotionOrder,
+      tickfont: { size: 24 },
       showgrid: true,
       gridcolor: '#e0e0e0',
       automargin: true,  // Automatically adjust margins to show all categories
